@@ -1,0 +1,1 @@
+"""Financial analysis algorithms and calculations."""
