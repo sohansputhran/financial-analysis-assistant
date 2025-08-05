@@ -1,0 +1,9 @@
+streamlit
+requests
+pandas
+openai
+google-generativeai
+beautifulsoup4
+PyPDF2
+matplotlib
+altair
