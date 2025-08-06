@@ -9,7 +9,7 @@ if company_query:
     if results:
         st.write("Matching Companies:")
         for idx, item in enumerate(results):
-            st.write(f"{item['symbol']} - {item['name']} ({item['exchange']})")
+            st.write(f"{item['symbol']} - {item['name']} ({item['cik']})")
         # Optionally, let user select one if multiple results found
     else:
         st.warning("No matching companies found.")
