@@ -56,13 +56,13 @@ pip install -r requirements.txt
 
 # (Run the app)
 streamlit run app.py
-```
 
 Enter a company name or ticker (e.g., AAPL or Apple Inc).
 
 The app finds the correct SEC CIK and fetches the latest financial filings.
 
 Preview and (soon) analyze company financials directly in the browser.
+```
 
 ## 📁 Project Structure
 ```
