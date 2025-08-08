@@ -138,7 +138,7 @@ class SECCompliantExtractor:
                 if score > best_score and score > 0.3:  # Minimum threshold
                     best_score = score
                     best_table = table
-            
+            print(best_table)
             if best_table is not None:
                 df = self._extract_table_data(best_table)
                 if not df.empty:
@@ -235,9 +235,10 @@ class SECCompliantExtractor:
         try:
             # pandas.read_html() is very robust and handles complex table structures
             dfs = pd.read_html(StringIO(str(table)))
-            print(dfs)
+            # print(dfs)
             if dfs:
-                df = dfs[0]                         # Take the first (and usually only) DataFrame
+                df = dfs[0]
+                print(df)                         # Take the first (and usually only) DataFrame
                 return self._clean_dataframe(df)
         except:
             pass                    # If pandas fails, fall back to manual extraction
@@ -270,18 +271,217 @@ class SECCompliantExtractor:
             return df
         
         # Remove empty rows and columns
-        df = df.dropna(how='all').dropna(axis=1, thresh=0.6 * len(df))
+        df = df.dropna(how='all').dropna(axis=1, how='all').reset_index(drop=True)
         
-        # Clean column names
-        df.columns = [str(col).strip() for col in df.columns]
-        
+
+        df.to_csv("Removed_Empty_Rows_Columns.csv", index=False)
+        # Handle multi-level headers (common in SEC filings)
+        df = self._consolidate_headers(df)
+        df.to_csv("Consolidated_Headers.csv", index=False)
+        # Remove duplicate columns
+        df = self._remove_duplicate_columns(df)
+        df.to_csv("Removed_Duplicate_Columns.csv", index=False)
+        # Clean and standardize column names
+        df.columns = self._clean_column_names(df.columns)
+        df.to_csv("Removed_Empty_Rows_Columns.csv", index=False)
+        # Remove rows that are actually header rows or separators
+        df = self._remove_header_rows(df)
+        df.to_csv("Removed_Header_Rows.csv", index=False)
+
         # Clean monetary values
         for col in df.columns:
             if df[col].dtype == 'object':
                 df[col] = df[col].astype(str).apply(self._clean_monetary_value)
+        df.to_csv("Cleaned_Monetary_Values.csv", index=False)
+        # Step 7: Remove any remaining empty rows after cleaning
+        df = df.dropna(how='all').reset_index(drop=True)
+        
+        # Step 8: Remove rows that are mostly empty (less than 2 non-empty cells)
+        df = self._remove_sparse_rows(df)
+
+        return df
+    
+    def _consolidate_headers(self, df):
+        """
+        Handle multi-level headers common in SEC filings
+        """
+        # Check if first row contains header information
+        first_row = df.iloc[0] if len(df) > 0 else None
+        second_row = df.iloc[1] if len(df) > 1 else None
+        
+        # If first row has few non-empty values and second row looks like headers
+        if (first_row is not None and second_row is not None and 
+            first_row.notna().sum() <= 2 and second_row.notna().sum() > first_row.notna().sum()):
+            
+            # Combine first and second row to create better column names
+            new_columns = []
+            for i, (col1, col2) in enumerate(zip(first_row, second_row)):
+                col1_str = str(col1) if pd.notna(col1) else ""
+                col2_str = str(col2) if pd.notna(col2) else ""
+                
+                # Combine non-empty parts
+                if col1_str.strip() and col2_str.strip() and col1_str.strip() != col2_str.strip():
+                    combined = f"{col1_str.strip()} {col2_str.strip()}"
+                elif col2_str.strip():
+                    combined = col2_str.strip()
+                elif col1_str.strip():
+                    combined = col1_str.strip()
+                else:
+                    combined = f"Column_{i}"
+                
+                new_columns.append(combined)
+            
+            # Update columns and remove the header rows
+            df.columns = new_columns
+            df = df.iloc[2:].reset_index(drop=True)
+            
+            print("Applied multi-header consolidation")
+        
+        return df
+
+    def _remove_duplicate_columns(self, df):
+        """
+        Remove duplicate columns by checking for exact matches
+        Args:
+            df (pd.DataFrame): DataFrame to clean
+        Returns:
+            pd.DataFrame: DataFrame with duplicate columns removed
+        """
+        # Find columns with duplicate names
+        seen_columns = {}
+        new_columns = []
+        
+        for col in df.columns:
+            col_str = str(col).strip()
+            if col_str in seen_columns:
+                # Check if the column content is actually different
+                if not df[col].equals(df[seen_columns[col_str]]):
+                    # Different content, rename it
+                    new_columns.append(f"{col_str}_duplicate_{seen_columns[col_str] + 1}")
+                    seen_columns[col_str] += 1
+                else:
+                    # Same content, mark for removal
+                    new_columns.append(f"__REMOVE__{col_str}")
+            else:
+                seen_columns[col_str] = 0
+                new_columns.append(col_str)
+        
+        # Update column names
+        df.columns = new_columns
+        
+        # Remove columns marked for removal
+        df = df.loc[:, ~df.columns.str.startswith('__REMOVE__')]
+        
+        # Also remove columns that are completely identical to others
+        df = df.loc[:, ~df.columns.duplicated()]
         
         return df
     
+    def _clean_column_names(self, columns):
+        """
+        Clean and standardize column names
+        Args:
+            columns (pd.Index): Original column names
+        Returns:
+            list: Cleaned column names
+        """
+        clean_columns = []
+    
+        for i, col in enumerate(columns):
+            col_str = str(col).strip()
+            
+            # Remove common pandas multi-index artifacts
+            col_str = re.sub(r'Unnamed: \d+', '', col_str)
+            col_str = re.sub(r'level_\d+', '', col_str)
+            
+            # Clean up whitespace and special characters
+            col_str = re.sub(r'\s+', ' ', col_str)  # Multiple spaces to single
+            col_str = col_str.replace('\n', ' ').replace('\t', ' ')
+            col_str = col_str.strip()
+            
+            # If column name is still empty or just numbers, create a meaningful name
+            if not col_str or col_str.isdigit() or col_str in ['nan', 'None']:
+                if i == 0:
+                    col_str = "Description"
+                else:
+                    col_str = f"Column_{i}"
+            
+            clean_columns.append(col_str)
+        
+        return clean_columns
+
+    def _remove_header_rows(self, df):
+        """
+        Remove rows that are actually header rows or separators
+        Args:
+            df (pd.DataFrame): DataFrame to clean
+        Returns:
+            pd.DataFrame: DataFrame with header rows removed
+        """
+        if df.empty:
+            return df
+        
+        rows_to_remove = []
+        
+        for idx, row in df.iterrows():
+            row_text = ' '.join([str(val) for val in row if pd.notna(val)]).lower()
+            
+            # Check if row contains header-like text
+            header_indicators = [
+                'year ended', 'months ended', 'as of', 'for the', 
+                'in millions', 'in thousands', 'except per share',
+                'unaudited', 'audited', 'consolidated', 'see accompanying'
+            ]
+            
+            # Check if row is mostly the same repeated value (separator row)
+            non_empty_values = [str(val).strip() for val in row if pd.notna(val) and str(val).strip()]
+            if len(set(non_empty_values)) <= 1 and len(non_empty_values) > 1:
+                rows_to_remove.append(idx)
+                continue
+            
+            # Check for header indicators
+            if any(indicator in row_text for indicator in header_indicators):
+                rows_to_remove.append(idx)
+                continue
+            
+            # Check if first column contains only year numbers (likely a header)
+            first_col_val = str(row.iloc[0]).strip()
+            if first_col_val.isdigit() and len(first_col_val) == 4 and first_col_val.startswith('20'):
+                # Only remove if this pattern appears in multiple consecutive rows
+                continue
+        
+        if rows_to_remove:
+            df = df.drop(rows_to_remove).reset_index(drop=True)
+            print(f"Removed {len(rows_to_remove)} header/separator rows")
+        
+        return df
+
+    def _remove_sparse_rows(self, df):
+        """
+        Remove rows that are mostly empty (less than 2 non-empty cells)
+        Args:
+            df (pd.DataFrame): DataFrame to clean
+        Returns:
+            pd.DataFrame: DataFrame with sparse rows removed
+        """
+        if df.empty:
+            return df
+        
+        # Calculate minimum number of non-empty cells required
+        min_cells = max(2, len(df.columns) // 3)  # At least 2 cells or 1/3 of columns
+        
+        # Count non-empty cells per row
+        row_counts = df.notna().sum(axis=1)
+        
+        # Keep rows with sufficient non-empty cells
+        mask = row_counts >= min_cells
+        
+        removed_count = (~mask).sum()
+        if removed_count > 0:
+            print(f"Removed {removed_count} sparse rows (< {min_cells} non-empty cells)")
+        
+        return df[mask].reset_index(drop=True)
+
     def _clean_monetary_value(self, value):
         """
         Clean monetary values by removing $, commas, and handling negatives
@@ -309,7 +509,9 @@ def main():
     """
     Main execution with multiple approaches
     """
-    url = "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm"
+    # url = "https://www.sec.gov/Archives/edgar/data/789019/000095017025100235/msft-20250630.htm"
+    # url = "https://www.sec.gov/ix?doc=/Archives/edgar/data/320193/000032019323000010/aapl-20230930.htm"
+    url = 'https://www.sec.gov/Archives/edgar/data/70858/000007085825000139/bac-20241231.htm'
     
     print("SEC-Compliant Financial Data Extraction")
     print("=" * 50)
