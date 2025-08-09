@@ -94,7 +94,9 @@ def _parse_financial_tables(soup):
         else:
             print(f"  No suitable table found for {stmt_type}")
     
-    return results
+    return results.get('income_statement', pd.DataFrame()), \
+           results.get('balance_sheet', pd.DataFrame()), \
+           results.get('cash_flow', pd.DataFrame())
 
 def _get_table_context(table, soup, context_chars=1000):
     """
