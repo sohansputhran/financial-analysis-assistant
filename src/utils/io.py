@@ -55,3 +55,12 @@ def dfs_to_csv_bytes(bundle: dict) -> bytes:
         zf.writestr("meta.json", json.dumps({k: bundle[k] for k in ["ticker","cik","form","accession","source_url"]}, indent=2))
     mem.seek(0)
     return mem.read()
+
+def save_clean_payload(folder: Path, payload_dict: dict):
+    (folder / "clean.json").write_text(json.dumps(payload_dict, indent=2))
+
+def load_clean_payload_from(folder: Path):
+    p = Path(folder) / "clean.json"
+    if p.exists():
+        return json.loads(p.read_text())
+    return None
