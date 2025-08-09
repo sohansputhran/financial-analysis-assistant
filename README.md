@@ -111,9 +111,9 @@ streamlit run app.py
 ---
 
 ## 📸 Screenshots
-![Home Page](resources\Home_Page.png)
+![Home Page](./resources/Home_Page.png)
 
-![Cleaned Data](resources\Data_Cleaned.png)
+![Cleaned Data](./resources/Data_Cleaned.png)
 
 
 ---
