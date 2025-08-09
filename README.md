@@ -99,7 +99,6 @@ pip install -r requirements.txt
 
 # Run the application
 streamlit run app.py
-```
 
 ### Usage
 1. **Enter Stock Ticker:** Input any US public company ticker (e.g., AAPL, MSFT, GOOGL)
@@ -114,7 +113,6 @@ streamlit run app.py
 ![Home Page](./resources/Home_Page.png)
 
 ![Cleaned Data](./resources/Data_Cleaned.png)
-
 
 ---
 
